@@ -1,0 +1,429 @@
+
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Stickman Battle</title>
+<style>
+*{box-sizing:border-box;touch-action:manipulation}
+body{margin:0;background:#080a12;color:white;font-family:Arial;overflow:hidden}
+.screen{display:none;position:fixed;inset:0;background:radial-gradient(circle at top,#25204b,#080a12 70%);padding:18px;overflow:auto}
+.screen.active{display:flex;flex-direction:column;align-items:center;justify-content:center}
+h1{color:#b78aff;text-shadow:0 0 15px #8b4dff}
+button,input{border:0;border-radius:10px;padding:13px;font-size:16px}
+button{background:#7849d9;color:white;font-weight:bold;cursor:pointer;user-select:none}
+button:active{filter:brightness(1.4);transform:scale(.96)}
+input{background:#202638;color:white;width:100%;margin:8px 0}
+.menu{width:min(95%,420px);text-align:center}
+.menu button{width:100%;margin:6px 0}
+.card{background:#171c2c;border:1px solid #383b58;border-radius:14px;padding:15px;width:min(95%,430px);margin:7px}
+.small{color:#aeb4ca;font-size:13px}
+#game{display:none;position:fixed;inset:0;background:#080a12}
+canvas{width:100%;height:100%;display:block}
+#hud{position:absolute;top:8px;left:8px;right:8px;display:flex;justify-content:space-between;align-items:center;pointer-events:none;gap:5px}
+#hud button{pointer-events:auto;padding:9px 12px}
+.bar{height:12px;background:#343747;border-radius:10px;overflow:hidden;margin-top:4px}
+.fill{height:100%;background:#35df8b;width:100%}
+.hpbox{width:32%;font-size:12px}
+#controls{position:absolute;bottom:12px;left:0;right:0;display:flex;justify-content:space-between;align-items:end;padding:0 14px;pointer-events:none}
+#stickArea{width:130px;height:130px;border-radius:50%;background:#ffffff18;border:2px solid #ffffff55;position:relative;pointer-events:auto;touch-action:none}
+#stick{position:absolute;width:48px;height:48px;border-radius:50%;background:#a77aff;left:39px;top:39px;pointer-events:none}
+.actions{display:grid;grid-template-columns:repeat(2,66px);gap:9px;pointer-events:auto}
+.actions button{height:58px;padding:4px;font-size:12px;border-radius:50%;border:2px solid #ffffff44}
+#powerBtn{background:#e35a38}
+#dashBtn{background:#278cdb}
+#notice{position:absolute;top:85px;left:0;right:0;text-align:center;color:#ffe68a;font-weight:bold;pointer-events:none}
+#shopItems{width:min(95%,430px);max-height:55vh;overflow:auto}
+.item{background:#202638;padding:12px;border-radius:10px;margin:8px 0}
+.item button{width:100%;margin-top:7px}
+</style>
+</head>
+<body>
+
+<section id="login" class="screen active">
+<div class="menu">
+<h1>STICKMAN BATTLE</h1>
+<div class="card">
+<h3>Masuk Game</h3>
+<input id="username" maxlength="18" placeholder="Masukkan nama kamu">
+<button onclick="loginGame()">MASUK</button>
+<p id="loginError" class="small"></p>
+</div>
+</div>
+</section>
+
+<section id="menu" class="screen">
+<div class="menu">
+<h1>STICKMAN BATTLE</h1>
+<div class="card">
+<div id="welcome"></div>
+<div id="stats"></div>
+</div>
+<button onclick="startGame()">PLAY</button>
+<button onclick="openShop()">SHOP</button>
+<button onclick="dailyBonus()">BONUS HARIAN</button>
+<button onclick="showScreen('settings')">SETTING</button>
+</div>
+</section>
+
+<section id="settings" class="screen">
+<div class="menu">
+<h1>SETTING</h1>
+<div class="card">Stickman Battle - Kontrol sentuh aktif.</div>
+<button onclick="showScreen('menu')">KEMBALI</button>
+</div>
+</section>
+
+<section id="shop" class="screen">
+<div class="menu">
+<h1>SHOP</h1>
+<div class="card" id="shopCoins"></div>
+<div id="shopItems"></div>
+<button onclick="showScreen('menu')">KEMBALI</button>
+</div>
+</section>
+
+<section id="result" class="screen">
+<div class="menu">
+<h1 id="resultTitle">MENANG!</h1>
+<div class="card" id="resultText"></div>
+<button onclick="startGame()">MAIN LAGI</button>
+<button onclick="showScreen('menu')">MENU</button>
+</div>
+</section>
+
+<div id="game">
+<canvas id="canvas"></canvas>
+<div id="hud">
+<div class="hpbox">
+<div>PLAYER <span id="playerHPText">100</span></div>
+<div class="bar"><div id="playerHP" class="fill"></div></div>
+</div>
+<button onclick="backToMenu()">MENU</button>
+<div style="text-align:center">LV <b id="levelText">1</b></div>
+<div class="hpbox">
+<div>BOT <span id="botHPText">100</span></div>
+<div class="bar"><div id="botHP" class="fill"></div></div>
+</div>
+</div>
+<div id="notice"></div>
+<div id="controls">
+<div id="stickArea"><div id="stick"></div></div>
+<div class="actions">
+<button id="punchBtn">PUKUL</button>
+<button id="jumpBtn">LOMPAT</button>
+<button id="powerBtn">POWER</button>
+<button id="dashBtn">DASH</button>
+</div>
+</div>
+</div>
+
+<script>
+const DB="stickman_accounts_v1";
+let accountName="",accounts={},player=null;
+let level=1,coins=0,damage=2,skin="default",power="fire";
+let running=false,raf=0,lastTime=0;
+let W=800,H=450;
+let p={x:180,y:0,vx:0,vy:0,hp:100,ground:true,face:1,attack:0,stun:0};
+let b={x:620,y:0,vx:0,vy:0,hp:100,ground:true,face:-1,attack:0,stun:0};
+let joystick=0,joyPointer=null,dashCD=0,powerCD=0,botPowerTimer=0;
+let effects=[],lastPunch=0;
+
+const $=id=>document.getElementById(id);
+function loadDB(){
+ try{accounts=JSON.parse(localStorage.getItem(DB)||"{}")}catch(e){accounts={}}
+}
+function saveDB(){
+ loadDB();
+ if(!accounts[accountName])return;
+ accounts[accountName].coins=coins;
+ accounts[accountName].level=level;
+ accounts[accountName].damage=damage;
+ accounts[accountName].skin=skin;
+ accounts[accountName].power=power;
+ localStorage.setItem(DB,JSON.stringify(accounts));
+}
+function loginGame(){
+ let n=$("username").value.trim();
+ if(!n){$("loginError").textContent="Isi nama dulu!";return}
+ loadDB();
+ if(accounts[n]&&accounts[n].banned){
+  $("loginError").textContent="Akun ini sedang diban oleh admin.";
+  return;
+ }
+ accountName=n;
+ if(!accounts[n]){
+  accounts[n]={coins:0,level:1,damage:2,skin:"default",power:"fire",banned:false};
+ }
+ player=accounts[n];
+ coins=Number(player.coins)||0;
+ level=Number(player.level)||1;
+ damage=Number(player.damage)||2;
+ skin=player.skin||"default";
+ power=player.power||"fire";
+ dailyCheck();
+ saveDB();
+ updateMenu();
+ showScreen("menu");
+}
+function dailyCheck(){
+ let today=new Date().toDateString();
+ if(player.lastDaily!==today){
+  coins+=50;
+  player.lastDaily=today;
+  saveDB();
+  alert("Bonus harian +50 coin!");
+ }
+}
+function dailyBonus(){
+ let today=new Date().toDateString();
+ if(player.lastClaim===today){alert("Bonus harian sudah diambil.");return}
+ player.lastClaim=today;
+ coins+=50;saveDB();updateMenu();
+ alert("Kamu mendapat 50 coin!");
+}
+function showScreen(id){
+ $("game").style.display="none";
+ document.querySelectorAll(".screen").forEach(s=>s.classList.remove("active"));
+ $(id).classList.add("active");
+}
+function updateMenu(){
+ $("welcome").textContent="Pemain: "+accountName;
+ $("stats").textContent="Coin: "+coins+" | Level: "+level+" | Damage: "+damage;
+}
+function openShop(){
+ updateShop();showScreen("shop");
+}
+const items=[
+ {name:"Skin Merah",type:"skin",value:"red",price:40},
+ {name:"Skin Biru",type:"skin",value:"blue",price:40},
+ {name:"Skin Emas",type:"skin",value:"gold",price:100},
+ {name:"Upgrade Damage +2",type:"damage",value:2,price:60},
+ {name:"Power Fireball",type:"power",value:"fire",price:50},
+ {name:"Power Banjir",type:"power",value:"flood",price:80},
+ {name:"Power Racun",type:"power",value:"toxic",price:100},
+ {name:"Power Petir",type:"power",value:"lightning",price:120},
+ {name:"Power Es",type:"power",value:"ice",price:120}
+];
+function updateShop(){
+ $("shopCoins").textContent="Coin kamu: "+coins;
+ $("shopItems").innerHTML="";
+ items.forEach((it,i)=>{
+  let div=document.createElement("div");div.className="item";
+  let owned=(it.type==="skin"&&skin===it.value)||(it.type==="power"&&power===it.value);
+  div.innerHTML="<b>"+it.name+"</b><p>Harga: "+it.price+" coin</p>";
+  let btn=document.createElement("button");
+  btn.textContent=owned?"DIPAKAI":(it.type==="damage"?"BELI UPGRADE":"BELI / PAKAI");
+  btn.onclick=()=>buyItem(i);
+  div.appendChild(btn);$("shopItems").appendChild(div);
+ });
+}
+function buyItem(i){
+ let it=items[i];
+ if((it.type==="skin"&&skin===it.value)||(it.type==="power"&&power===it.value))return;
+ if(coins<it.price){alert("Coin tidak cukup!");return}
+ coins-=it.price;
+ if(it.type==="skin")skin=it.value;
+ if(it.type==="power")power=it.value;
+ if(it.type==="damage")damage+=it.value;
+ saveDB();updateShop();
+}
+function startGame(){
+ showScreen("menu");
+ $("game").style.display="block";
+ try{if(document.documentElement.requestFullscreen)document.documentElement.requestFullscreen()}catch(e){}
+ level=Number(player.level)||level;
+ p={x:W*.23,y:0,vx:0,vy:0,hp:100,ground:true,face:1,attack:0,stun:0};
+ b={x:W*.77,y:0,vx:0,vy:0,hp:100,ground:true,face:-1,attack:0,stun:0};
+ effects=[];dashCD=0;powerCD=0;botPowerTimer=3;
+ resize();
+ running=true;lastTime=0;
+ $("levelText").textContent=level;
+ cancelAnimationFrame(raf);raf=requestAnimationFrame(loop);
+}
+function backToMenu(){
+ running=false;cancelAnimationFrame(raf);
+ $("game").style.display="none";
+ if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});
+ updateMenu();showScreen("menu");
+}
+function resize(){
+ let c=$("canvas"),r=c.getBoundingClientRect();
+ W=Math.max(320,r.width);H=Math.max(240,r.height);
+ c.width=W*devicePixelRatio;c.height=H*devicePixelRatio;
+ c.getContext("2d").setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
+ if(p.y===0)p.y=H-65;
+ if(b.y===0)b.y=H-65;
+}
+window.addEventListener("resize",resize);
+function loop(t){
+ if(!running)return;
+ let dt=Math.min((t-lastTime)/1000||.016,.04);lastTime=t;
+ update(dt);draw();
+ raf=requestAnimationFrame(loop);
+}
+function update(dt){
+ let floor=H-65;
+ p.y=Math.min(p.y,floor);b.y=Math.min(b.y,floor);
+ p.vx=joystick*230;
+ if(p.stun>0)p.stun-=dt;
+ if(b.stun>0)b.stun-=dt;
+ if(p.attack>0)p.attack-=dt;
+ if(b.attack>0)b.attack-=dt;
+ p.x+=p.vx*dt;
+ p.vy+=650*dt;p.y+=p.vy*dt;
+ if(p.y>=floor){p.y=floor;p.vy=0;p.ground=true}
+ b.vy+=650*dt;b.y+=b.vy*dt;
+ if(b.y>=floor){b.y=floor;b.vy=0;b.ground=true}
+ p.x=Math.max(30,Math.min(W-30,p.x));
+ b.x=Math.max(30,Math.min(W-30,b.x));
+ p.face=b.x>p.x?1:-1;b.face=-p.face;
+ if(b.stun<=0){
+  let dist=p.x-b.x;
+  if(Math.abs(dist)>65)b.x+=Math.sign(dist)*(90+level*3)*dt;
+  else if(Math.random()<.025+level*.001)botPunch();
+ }
+ botPowerTimer-=dt;
+ if(botPowerTimer<=0&&Math.abs(b.x-p.x)<280){
+  botPowerTimer=Math.max(3,7-level*.1);
+  p.hp-=Math.min(12,4+Math.floor(level/3));
+  p.stun=.3;
+  effects.push({type:"bot",x:p.x,y:p.y-55,life:.5});
+ }
+ if(dashCD>0)dashCD-=dt;
+ if(powerCD>0)powerCD-=dt;
+ effects.forEach(e=>e.life-=dt);
+ effects=effects.filter(e=>e.life>0);
+ $("playerHP").style.width=Math.max(0,p.hp)+"%";
+ $("botHP").style.width=Math.max(0,b.hp)+"%";
+ $("playerHPText").textContent=Math.max(0,Math.ceil(p.hp));
+ $("botHPText").textContent=Math.max(0,Math.ceil(b.hp));
+ if(b.hp<=0)finish(true);
+ if(p.hp<=0)finish(false);
+}
+function botPunch(){
+ if(Math.abs(b.x-p.x)<90){
+  p.hp-=Math.min(10,2+Math.floor(level/3));
+  p.stun=.2;
+  b.attack=.2;
+  effects.push({type:"hit",x:p.x,y:p.y-45,life:.25});
+ }
+}
+function punch(){
+ if(!running||p.attack>0)return;
+ p.attack=.25;
+ if(Math.abs(b.x-p.x)<105&&Math.abs(b.y-p.y)<60){
+  b.hp-=damage;
+  b.stun=.2;
+  effects.push({type:"hit",x:b.x,y:b.y-50,life:.3});
+ }
+}
+function jump(){
+ if(!running||!p.ground)return;
+ p.vy=-390;p.ground=false;
+}
+function dash(){
+ if(!running||dashCD>0)return;
+ dashCD=10;
+ let dir=joystick===0?p.face:Math.sign(joystick);
+ p.x+=dir*115;p.x=Math.max(30,Math.min(W-30,p.x));
+ if(Math.abs(b.x-p.x)<100){b.stun=1;b.hp-=5}
+ effects.push({type:"dash",x:p.x,y:p.y,life:.3});
+}
+function usePower(){
+ if(!running||powerCD>0)return;
+ powerCD=20;
+ if(power==="fire"){
+  effects.push({type:"fire",x:b.x,y:30,life:1});
+  setTimeout(()=>{if(running){b.hp-=20;b.stun=.8}},500);
+ }else if(power==="flood"){
+  effects.push({type:"flood",x:0,y:H-100,life:1});
+  b.hp-=5;b.stun=.5;
+ }else if(power==="toxic"){
+  effects.push({type:"toxic",x:0,y:100,life:2});
+  let ticks=0;let timer=setInterval(()=>{if(!running||ticks++>=2){clearInterval(timer);return}b.hp-=1},1000);
+ }else if(power==="lightning"){
+  effects.push({type:"lightning",x:b.x,y:0,life:.6});
+  b.hp-=15;b.stun=.7;
+ }else{
+  effects.push({type:"ice",x:b.x,y:b.y-50,life:1});
+  b.hp-=8;b.stun=1.5;
+ }
+}
+function finish(win){
+ if(!running)return;
+ running=false;cancelAnimationFrame(raf);
+ if(win){coins+=10;level++;player.level=level}
+ saveDB();updateMenu();
+ $("resultTitle").textContent=win?"KAMU MENANG!":"KAMU KALAH!";
+ $("resultText").textContent=win?"+10 coin! Level berikutnya: "+level:"Coba lagi untuk mengalahkan bot.";
+ showScreen("result");
+}
+function drawStick(ctx,x,y,color,face,attacking){
+ ctx.save();ctx.translate(x,y);ctx.scale(face,1);
+ ctx.strokeStyle=color;ctx.lineWidth=7;ctx.lineCap="round";
+ ctx.beginPath();ctx.arc(0,-58,13,0,Math.PI*2);ctx.stroke();
+ ctx.beginPath();ctx.moveTo(0,-45);ctx.lineTo(0,-19);
+ ctx.moveTo(0,-39);ctx.lineTo(-17,-25);
+ ctx.moveTo(0,-39);ctx.lineTo(attacking?30:17,attacking?-38:-25);
+ ctx.moveTo(0,-19);ctx.lineTo(-13,0);
+ ctx.moveTo(0,-19);ctx.lineTo(13,0);ctx.stroke();
+ ctx.restore();
+}
+function draw(){
+ let c=$("canvas").getContext("2d");
+ let sky=c.createLinearGradient(0,0,0,H);sky.addColorStop(0,"#191a38");sky.addColorStop(1,"#292044");
+ c.fillStyle=sky;c.fillRect(0,0,W,H);
+ c.fillStyle="#ffffff10";
+ for(let i=0;i<18;i++){c.beginPath();c.arc((i*137)%W,(i*71)%H,2,0,7);c.fill()}
+ c.fillStyle="#161a27";c.fillRect(0,H-60,W,60);
+ c.fillStyle="#6945a7";c.fillRect(0,H-62,W,3);
+ effects.forEach(e=>{
+  c.save();c.globalAlpha=Math.max(.15,e.life);
+  if(e.type==="fire"){c.fillStyle="#ff7935";c.beginPath();c.arc(e.x,e.y+35,22,0,7);c.fill()}
+  if(e.type==="flood"){c.fillStyle="#168bd8";c.fillRect(0,H-110,W,50)}
+  if(e.type==="toxic"){c.fillStyle="#63d54c";c.fillRect(0,90,W,45)}
+  if(e.type==="lightning"){c.strokeStyle="#fff36b";c.lineWidth=7;c.beginPath();c.moveTo(e.x,0);c.lineTo(e.x-25,80);c.lineTo(e.x+10,120);c.stroke()}
+  if(e.type==="ice"){c.fillStyle="#72eaff";c.beginPath();c.arc(e.x,e.y,35,0,7);c.fill()}
+  if(e.type==="hit"||e.type==="bot"){c.fillStyle="#ffe66a";c.font="bold 25px Arial";c.fillText("✦",e.x,e.y)}
+  if(e.type==="dash"){c.strokeStyle="#70caff";c.lineWidth=5;c.beginPath();c.moveTo(e.x-35,e.y-30);c.lineTo(e.x+35,e.y-30);c.stroke()}
+  c.restore();
+ });
+ let color=skin==="red"?"#ff626e":skin==="blue"?"#56baff":skin==="gold"?"#ffd55d":"#b78aff";
+ drawStick(c,p.x,p.y,color,p.face,p.attack>0);
+ drawStick(c,b.x,b.y,"#ff6879",b.face,b.attack>0);
+}
+function bindPress(id,fn){
+ let el=$(id);
+ el.addEventListener("pointerdown",e=>{e.preventDefault();fn();});
+}
+bindPress("punchBtn",punch);
+bindPress("jumpBtn",jump);
+bindPress("powerBtn",usePower);
+bindPress("dashBtn",dash);
+
+const area=$("stickArea"),knob=$("stick");
+function moveJoy(e){
+ let r=area.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2;
+ let dx=e.clientX-cx,dy=e.clientY-cy;
+ let max=39,len=Math.hypot(dx,dy);
+ if(len>max){dx=dx/len*max;dy=dy/len*max}
+ knob.style.left=(41+dx)+"px";knob.style.top=(41+dy)+"px";
+ joystick=Math.max(-1,Math.min(1,dx/max));
+}
+area.addEventListener("pointerdown",e=>{
+ e.preventDefault();joyPointer=e.pointerId;
+ area.setPointerCapture(e.pointerId);moveJoy(e);
+});
+area.addEventListener("pointermove",e=>{
+ if(e.pointerId===joyPointer)moveJoy(e);
+});
+function resetJoy(){
+ joyPointer=null;joystick=0;knob.style.left="39px";knob.style.top="39px";
+}
+area.addEventListener("pointerup",resetJoy);
+area.addEventListener("pointercancel",resetJoy);
+</script>
+</body>
+</html>
